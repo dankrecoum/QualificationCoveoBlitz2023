@@ -1,54 +1,43 @@
-from typing import List
+from typing import List, Tuple
+
+import tcod.path
+
 from game_message import Tick, Action, Spawn, Sail, Dock, Anchor, directions, Position
 import numpy as np
 import math
 
 
-def next_path_to_port(tick, position):
-    # if tick.currentLocation.row < position.row and tick.currentLocation.column < position.column:
-    #     x = 1
-    #     y = 1
-    #     a = "SE"
-    # if tick.currentLocation.row < position.row and tick.currentLocation.column > position.column:
-    #     x = 1
-    #     y = -1
-    #     a = "NW"
-    # if tick.currentLocation.row > position.row and tick.currentLocation.column > position.column:
-    #     x = -1
-    #     y = -1
-    #     a = "NE"
-    # if tick.currentLocation.row > position.row and tick.currentLocation.column < position.column:
-    #     a = "SW"
-    #     x = -1
-    #     y = 1
-    # if tick.currentLocation.row < position.row and tick.currentLocation.column == position.column:
-    #     x = 1
-    #     a = "E"
-    # if tick.currentLocation.row > position.row and tick.currentLocation.column == position.column:
-    #     x = -1
-    #     a = "W"
-    # if tick.currentLocation.row == position.row and tick.currentLocation.column > position.column:
-    #     y = 1
-    #     a = "N"
-    # if tick.currentLocation.row == position.row and tick.currentLocation.column < position.column:
-    #     y = -1
-    #     a = "S"
-    if tick.currentLocation.column > position.column:
+def next_path_to_port(tick, position: Tuple):
+
+    if tick.currentLocation.column > position[0]:
         return "N"
 
-    elif tick.currentLocation.column < position.column:
+    elif tick.currentLocation.column < position[0]:
         return "S"
 
-    if tick.currentLocation.row > position.row:
+    if tick.currentLocation.row > position[1]:
         return "W"
-    elif tick.currentLocation.row < position.row:
+    elif tick.currentLocation.row < position[1]:
         return "E"
+
+
+def create_graph(tick: Tick):
+    graph = np.array(tick.map.topology)
+    for indexl, ligne in tick.map.topology:
+        for indexc, colonne in ligne:
+            distance = abs(tick.currentLocation.row - indexl) + abs(tick.currentLocation.column - indexc)
+            if tick.tideSchedule[distance % len(tick.tideSchedule)] > colonne:
+                graph[indexl][indexc] = 1
+            else:
+                graph[indexl][indexc] = 0
+    return graph.tolist()
 
 
 class Bot:
     def __init__(self):
         self.graph = None
         self.ports = []
+        self.path = None
         print("Initializing your super mega duper bot")
 
     def get_next_move(self, tick: Tick) -> Action:
@@ -59,11 +48,17 @@ class Bot:
             print(tick.tideSchedule)
             self.ports.append(tick.map.ports[0])
             return Spawn(tick.map.ports[0])
-        # if tick.currentTick % len(tick.tideSchedule) == 0:
-        #     self.graph = self.create_graph(tick)
-        nearest_port = tick.map.ports[self.find_nearest_port(tick)]
 
-        next_move = next_path_to_port(tick, nearest_port)
+        """
+        vérifier si on a atteint le port puis recréer le graph et le chemin
+        """
+        self.graph = tcod.path.AStar(create_graph(tick), 0)
+        nearest_port = tick.map.ports[self.find_nearest_port(tick)]
+        self.path = self.graph.get_path(tick.currentLocation.row, tick.currentLocation.column, nearest_port.row,
+                                        nearest_port.column)
+        next_move = next_path_to_port(tick, self.path[0])
+        self.path = self.path[1:]
+
         if tick.currentLocation.row == nearest_port.row and tick.currentLocation.column == nearest_port.column:
             self.ports.append(nearest_port)
             return Dock()
@@ -85,9 +80,3 @@ class Bot:
             if port.row == row and port.column == column:
                 return True
         return False
-
-    def create_graph(self, tick: Tick) -> List[List[int]]:
-        graph = np.array(tick.map.topology)
-        for indexl, ligne in tick.map.topology:
-            for indexc, colonne in ligne:
-                distance = abs(tick.currentLocation.row - indexl) + abs(tick.currentLocation.column - indexc)
